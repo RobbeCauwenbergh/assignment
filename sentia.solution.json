@@ -1,0 +1,242 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "generalParameters": {
+            "type": "object"
+        },
+        "appServiceParameters": {
+            "type": "object"
+        }
+    },
+    "functions": [],
+    "variables": {
+        "resourceNames": {
+            "resoureGroupName": "[concat('rg-', parameters('generalParameters').environment, '-', parameters('generalParameters').applicationAbbrevation, '-', parameters('generalParameters').index)]",
+            "frontDoorName": "[concat('fd-', parameters('generalParameters').environment, '-', parameters('generalParameters').applicationAbbrevation, '-', parameters('generalParameters').index)]",
+            "AppServicePlan": "[concat('asp-', parameters('generalParameters').environment, '-', parameters('generalParameters').applicationAbbrevation, '-', parameters('generalParameters').index)]",
+            "webApp": "[concat('web-', parameters('generalParameters').environment, '-', parameters('generalParameters').applicationAbbrevation, '-', parameters('generalParameters').index)]",
+            "cosmosDB": "[concat('cdb-', parameters('generalParameters').environment, '-', parameters('generalParameters').applicationAbbrevation, '-', parameters('generalParameters').index)]",
+            "vnet": "[concat('vnet-', parameters('generalParameters').environment, '-', parameters('generalParameters').applicationAbbrevation, '-', parameters('generalParameters').index)]",
+            "storageAccount": "[concat('sta-', parameters('generalParameters').environment, '-', parameters('generalParameters').applicationAbbrevation, '-', parameters('generalParameters').index)]"
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Network/frontDoors",
+            "apiVersion": "2020-07-01",
+            "name": "[variables('resourceNames').frontDoorName]",
+            "location": "global",
+            "dependsOn":[
+                "[variables('resourceNames').webApp]"
+            ],
+            "properties": {
+                "routingRules": [
+                    {
+                        "name": "routingRule1",
+                        "properties": {
+                            "frontendEndpoints": [
+                                {
+                                    "id": "[resourceId('Microsoft.Network/frontDoors/frontendEndpoints', variables('resourceNames').frontDoorName, 'frontendEndpoint1')]"
+                                }
+                            ],
+                            "acceptedProtocols": [
+                                "Http",
+                                "Https"
+                            ],
+                            "patternsToMatch": [
+                                "/*"
+                            ],
+                            "routeConfiguration": {
+                                "@odata.type": "#Microsoft.Azure.FrontDoor.Models.FrontdoorForwardingConfiguration",
+                                "forwardingProtocol": "MatchRequest",
+                                "backendPool": {
+                                    "id": "[resourceId('Microsoft.Network/frontDoors/backendPools', variables('resourceNames').frontDoorName, 'backendPool1')]"
+                                }
+                            },
+                            "enabledState": "Enabled"
+                        }
+                    }
+                ],
+                "healthProbeSettings": [
+                    {
+                        "name": "healthProbeSettings1",
+                        "properties": {
+                            "path": "/",
+                            "protocol": "Http",
+                            "intervalInSeconds": 120
+                        }
+                    }
+                ],
+                "loadBalancingSettings": [
+                    {
+                        "name": "loadBalancingSettings1",
+                        "properties": {
+                            "sampleSize": 4,
+                            "successfulSamplesRequired": 2
+                        }
+                    }
+                ],
+                "backendPools": [
+                    {
+                        "name": "backendPool1",
+                        "properties": {
+                            "backends": [
+                                {
+                                    "address": "[reference(variables('resourceNames').webApp, '2016-03-01', 'Full').properties.inboundIpAddress]",
+                                    "backendHostHeader": "[reference(variables('resourceNames').webApp, '2016-03-01', 'Full').properties.inboundIpAddress]",
+                                    "httpPort": 80,
+                                    "httpsPort": 443,
+                                    "weight": 50,
+                                    "priority": 1,
+                                    "enabledState": "Enabled"
+                                }
+                            ],
+                            "loadBalancingSettings": {
+                                "id": "[resourceId('Microsoft.Network/frontDoors/loadBalancingSettings', variables('resourceNames').frontDoorName, 'loadBalancingSettings1')]"
+                            },
+                            "healthProbeSettings": {
+                                "id": "[resourceId('Microsoft.Network/frontDoors/healthProbeSettings', variables('resourceNames').frontDoorName, 'healthProbeSettings1')]"
+                            }
+                        }
+                    }
+                ],
+                "frontendEndpoints": [
+                    {
+                        "name": "frontendEndpoint1",
+                        "properties": {
+                            "hostName": "[concat(variables('resourceNames').frontDoorName, '.azurefd.net')]",
+                            "sessionAffinityEnabledState": "Disabled"
+                        }
+                    }
+                ],
+                "enabledState": "Enabled"
+            }
+        },
+        {
+            "name": "[variables('resourceNames').AppServicePlan]",
+            "type": "Microsoft.Web/serverfarms",
+            "apiVersion": "2018-02-01",
+            "location": "[parameters('generalParameters').location]",
+            "sku": {
+                "name": "[parameters('appServiceParameters').skuName]",
+                "capacity": "[parameters('appServiceParameters').skuCapacity]"
+            },
+            "tags": {
+            },
+            "properties": {
+                "name": "[variables('resourceNames').AppServicePlan]"
+            }
+        },
+        {
+            "name": "[variables('resourceNames').webApp]",
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2018-11-01",
+            "location": "[parameters('generalParameters').location]",
+            "tags": {
+                "[concat('hidden-related:', resourceGroup().id, '/providers/Microsoft.Web/serverfarms/', variables('resourceNames').AppServicePlan)]": "Resource"
+            },
+            "dependsOn": [
+                "[variables('resourceNames').AppServicePlan]",
+                "[variables('resourceNames').vnet]"
+            ],
+            "properties": {
+                "name": "[variables('resourceNames').webApp]",
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('resourceNames').AppServicePlan)]"
+            },
+            "resources":[
+                {
+                    "name": "virtualNetwork",
+                    "type": "config",
+                    "apiVersion": "2019-08-01",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Web/sites', variables('resourceNames').webApp)]"
+                    ],
+                    "properties": {
+                        "subnetResourceId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('resourceNames').vnet, 'webapp-subnet')]",
+                        "swiftSupported": true
+                    }
+                }
+            ]
+        },
+        {
+            "name": "[variables('resourceNames').cosmosDB]",
+            "type": "Microsoft.DocumentDB/databaseAccounts",
+            "apiVersion": "2019-12-12",
+            "location": "[parameters('generalParameters').location]",
+            "tags": {
+            },
+            "kind": "GlobalDocumentDB",
+            "properties": {
+                "consistencyPolicy": {
+                    "defaultConsistencyLevel": "Session",
+                    "maxStalenessPrefix": 1,
+                    "maxIntervalInSeconds": 5
+                },
+                "locations": [
+                    {
+                        "locationName": "westeurope",
+                        "failoverPriority": 0
+                    }
+                ],
+                "databaseAccountOfferType": "Standard",
+                "enableAutomaticFailover": true,
+                "capabilities": [
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.DocumentDB/databaseAccounts/apis/databases",
+            "name": "[concat(variables('resourceNames').cosmosDB, '/mongodb/', 'database-name', '/', 'collectionName')]",
+            "apiVersion": "2016-03-31",
+            "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts/', 'account-name')]"
+            ],
+            "properties": {
+                "resource": {
+                    "throughput": 400,
+                    "id": "database-id"
+                },
+                "options": {
+                }
+            }
+        },
+        {
+            "name": "[variables('resourceNames').vnet]",
+            "type": "Microsoft.Network/virtualNetworks",
+            "apiVersion": "2019-11-01",
+            "location": "[parameters('generalParameters').location]",
+            "tags": {
+            },
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "10.0.0.0/16"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "webapp-subnet",
+                        "properties": {
+                            "addressPrefix": "10.0.0.0/24"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "name": "[variables('resourceNames').storageAccount]",
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2019-06-01",
+            "tags": {
+            },
+            "location": "[parameters('generalParameters').location]",
+            "kind": "StorageV2",
+            "sku": {
+                "name": "Standard_LRS",
+                "tier": "Standard"
+            }
+        }
+    ],
+    "outputs": {}
+}
