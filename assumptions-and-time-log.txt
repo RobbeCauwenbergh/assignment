@@ -1,0 +1,19 @@
+----- TIMELOG
+
+START 13u10
+START high level architecture and summing the business requirements 13u40
+END high level architecture 14u00
+START IaC MVP 14u05
+END IaC MVP 14u45
+
+------- TIMELOG
+
+
+---- ASSUMPTIONS
+- Cron jobs are going to be run on the app service plan by using WebJobs
+- Current FTP connections are changed and documents are now placed on a storage account account. There is a mechanism built-in into the web app to servce the documents towards the client.
+- Current model is without private endpoint. If this project is worked out further, the introduction of private endpoint should be made.
+- Web app is vnet integrated and outputting logs to a VM in a dedicated shared virtual network.
+- Current application code can run an azure app service, remanufacturing is done whenever required.
+
+
